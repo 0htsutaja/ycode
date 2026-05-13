@@ -513,11 +513,6 @@ export async function POST(request: NextRequest) {
         globalChanged = true;
       }
 
-      // If global CSS changed, force full invalidation (clears fetchCachedGlobalSettings)
-      if (!globalChanged && result.changes.css) {
-        globalChanged = true;
-      }
-
       // Full publish touches global caches (locales, translations, redirects, fonts,
       // folder auth, error pages) that are all tagged with 'all-pages'.
       // Force full invalidation so those caches are refreshed.

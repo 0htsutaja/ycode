@@ -10,7 +10,7 @@ import { enrichItemsWithCountValues } from '@/lib/repositories/collectionCountRe
 import type { Page, PageFolder, PageLayers, Component, ComponentVariable, CollectionItemWithValues, CollectionField, Layer, CollectionPaginationMeta, Translation, Locale } from '@/types';
 import { getCollectionVariable, resolveFieldValue, evaluateVisibility, getLayerHtmlTag, filterDisabledSliderLayers } from '@/lib/layer-utils';
 import { isFieldVariable, isAssetVariable, createDynamicTextVariable, createDynamicRichTextVariable, createAssetVariable, getDynamicTextContent, getVariableStringValue, getAssetId, resolveDesignStyles } from '@/lib/variable-utils';
-import { generateImageSrcset, getImageSizes, getOptimizedImageUrl, getAssetProxyUrl, DEFAULT_ASSETS, collectLayerAssetIds } from '@/lib/asset-utils';
+import { generateImageSrcset, getImageSizes, getOptimizedImageUrl, getAssetProxyUrl, DEFAULT_ASSETS, collectLayerAssetIds, buildSvgDataUrl } from '@/lib/asset-utils';
 import { resolveComponents, applyComponentOverrides } from '@/lib/resolve-components';
 import { getComponentVariantLayers } from '@/lib/component-variant-utils';
 import { isTiptapDoc, hasBlockElementsWithResolver } from '@/lib/tiptap-utils';
@@ -3516,7 +3516,7 @@ function resolveLayerAssets(
       if (asset?.public_url) {
         resolvedUrl = asset.public_url;
       } else if (asset?.content) {
-        resolvedUrl = `data:image/svg+xml,${encodeURIComponent(asset.content)}`;
+        resolvedUrl = buildSvgDataUrl(asset.content, asset.width, asset.height);
       }
       variableUpdates.image = {
         src: createDynamicTextVariable(resolvedUrl),
@@ -3573,7 +3573,7 @@ function resolveLayerAssets(
       if (asset?.public_url) {
         resolvedUrl = asset.public_url;
       } else if (asset?.content) {
-        resolvedUrl = `data:image/svg+xml,${encodeURIComponent(asset.content)}`;
+        resolvedUrl = buildSvgDataUrl(asset.content, asset.width, asset.height);
       }
     } else {
       resolvedUrl = DEFAULT_ASSETS.IMAGE;

@@ -3,6 +3,30 @@
  * Centralized helpers for asset type detection, formatting, and categorization
  */
 
+/**
+ * Build a data URL for inline SVG content. When `width`/`height` are provided
+ * and the SVG root lacks them, they're injected so `<img>` consumers get
+ * intrinsic dimensions — otherwise browsers fall back to 300×150 for SVGs
+ * that only carry a viewBox, breaking CSS `w-auto`/`h-auto` sizing.
+ */
+export function buildSvgDataUrl(
+  content: string,
+  width?: number | null,
+  height?: number | null
+): string {
+  let svg = content;
+  if (width && height) {
+    svg = svg.replace(/<svg\b([^>]*)>/i, (match, attrs: string) => {
+      const hasWidth = /\swidth\s*=/i.test(attrs);
+      const hasHeight = /\sheight\s*=/i.test(attrs);
+      if (hasWidth && hasHeight) return match;
+      const injected = `${!hasWidth ? ` width="${width}"` : ''}${!hasHeight ? ` height="${height}"` : ''}`;
+      return `<svg${injected}${attrs}>`;
+    });
+  }
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 import type { AssetCategory, AssetCategoryFilter, Layer, Component, ComponentVariable } from '@/types';
 import {
   ASSET_CATEGORIES,

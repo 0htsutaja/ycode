@@ -1149,10 +1149,19 @@ export function renderRichText(
       return null;
     }
     const inlineContent = renderInlineContent(paragraph.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds, useSpanForParagraphs);
-    if (isEditMode && !isSimpleTextElement) {
+    if (!isSimpleTextElement) {
+      // Wrap so inline nodes (text + <strong>, etc.) form a single flow unit.
+      // Without this, a parent with `flex flex-col` turns each text node /
+      // inline element into separate flex items that stack vertically.
+      const tag = useSpanForParagraphs ? 'span' : 'p';
       const paragraphClass = textStyles?.paragraph?.classes ?? DEFAULT_TEXT_STYLES.paragraph?.classes ?? '';
       const children = Array.isArray(inlineContent) ? inlineContent : [inlineContent];
-      return React.createElement('span', { 'data-style': 'paragraph', 'data-block-index': 0, className: paragraphClass }, ...children);
+      const props: Record<string, any> = { className: paragraphClass || undefined };
+      if (isEditMode) {
+        props['data-style'] = 'paragraph';
+        props['data-block-index'] = 0;
+      }
+      return React.createElement(tag, props, ...children);
     }
     return inlineContent;
   }

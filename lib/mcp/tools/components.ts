@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { Layer } from '@/types';
+import type { ComponentVariable, ComponentVariableValue, ComponentVariant, Layer } from '@/types';
 import {
   getAllComponents,
   getComponentById,
@@ -33,11 +33,35 @@ const templateEnum = z.enum(
   Object.keys(ELEMENT_TEMPLATES) as [string, ...string[]],
 );
 
+const variableTypeEnum = z.enum(['text', 'rich_text', 'image', 'link', 'audio', 'video', 'icon', 'variant'])
+  .describe('Variable type. "variant" lets instances pick which variant of a nested component is rendered.');
+
 const variableSchema = z.object({
   name: z.string().describe('Display name (e.g. "Button label", "Hero image")'),
-  type: z.enum(['text', 'image', 'link', 'audio', 'video', 'icon']).default('text')
-    .describe('Variable type'),
+  type: variableTypeEnum.default('text'),
+  placeholder: z.string().optional()
+    .describe('Placeholder text shown in the override input on each instance.'),
+  default_value: z.unknown().optional()
+    .describe('Default value applied when an instance does not override the variable. Shape matches the variable type (e.g. { type: "dynamic_text", data: { content: "Click me" } } for text).'),
 });
+
+const variableUpdateSchema = z.object({
+  id: z.string().optional().describe('Existing variable ID to update, or omit to create new'),
+  name: z.string().describe('Variable display name'),
+  type: variableTypeEnum.default('text'),
+  placeholder: z.string().optional(),
+  default_value: z.unknown().optional(),
+});
+
+function normalizeVariables(input: Array<z.infer<typeof variableUpdateSchema>>): ComponentVariable[] {
+  return input.map((v) => ({
+    id: v.id || generateId(),
+    name: v.name,
+    type: v.type,
+    ...(v.placeholder !== undefined && { placeholder: v.placeholder }),
+    ...(v.default_value !== undefined && { default_value: v.default_value as ComponentVariableValue }),
+  }));
+}
 
 export function registerComponentTools(server: McpServer) {
   server.tool(
@@ -103,11 +127,7 @@ EXAMPLE: A "Card" component with a title variable:
         children: [],
       };
 
-      const componentVariables = variables?.map((v) => ({
-        id: generateId(),
-        name: v.name,
-        type: v.type,
-      }));
+      const componentVariables = variables ? normalizeVariables(variables) : undefined;
 
       const component = await createComponent({
         name,
@@ -133,27 +153,17 @@ EXAMPLE: A "Card" component with a title variable:
 
   server.tool(
     'update_component',
-    'Update a component\'s name and/or variables. Use update_component_layers to modify the layer tree.',
+    'Update a component\'s name and/or variables. Use update_component_layers to modify the layer tree, or the variant tools for variant management.',
     {
       component_id: z.string().describe('The component ID'),
       name: z.string().optional().describe('New component name'),
-      variables: z.array(z.object({
-        id: z.string().optional().describe('Existing variable ID to update, or omit to create new'),
-        name: z.string().describe('Variable display name'),
-        type: z.enum(['text', 'image', 'link', 'audio', 'video', 'icon']).default('text'),
-      })).optional().describe('Full list of variables (replaces existing). Include existing IDs to preserve them.'),
+      variables: z.array(variableUpdateSchema).optional()
+        .describe('Full list of variables (replaces existing). Include existing IDs to preserve them; new entries get fresh IDs.'),
     },
     async ({ component_id, name, variables }) => {
-      const updates: Record<string, unknown> = {};
+      const updates: { name?: string; variables?: ComponentVariable[] } = {};
       if (name !== undefined) updates.name = name;
-
-      if (variables !== undefined) {
-        updates.variables = variables.map((v) => ({
-          id: v.id || generateId(),
-          name: v.name,
-          type: v.type,
-        }));
-      }
+      if (variables !== undefined) updates.variables = normalizeVariables(variables);
 
       const component = await updateComponent(component_id, updates);
       broadcastComponentUpdated(component_id, updates).catch(() => {});
@@ -171,11 +181,181 @@ EXAMPLE: A "Card" component with a title variable:
   );
 
   server.tool(
-    'update_component_layers',
-    `Modify a component's layer tree. Works like batch_operations but for component layers.
-Use ref_id in add_layer to name layers, then reference them in later operations.`,
+    'list_component_variants',
+    'List the named variants of a component. Every component has at least one ("Default"). Variants share the component\'s variables.',
     {
       component_id: z.string().describe('The component ID'),
+    },
+    async ({ component_id }) => {
+      const component = await getComponentById(component_id);
+      if (!component) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: Component "${component_id}" not found.` }],
+          isError: true,
+        };
+      }
+      const variants = (component.variants && component.variants.length > 0)
+        ? component.variants
+        : [{ id: generateId(), name: 'Default', layers: component.layers || [] }];
+      const summary = variants.map((v) => ({
+        id: v.id,
+        name: v.name,
+        layer_count: countLayers(v.layers),
+        is_primary: v === variants[0],
+      }));
+      return { content: [{ type: 'text' as const, text: JSON.stringify(summary, null, 2) }] };
+    },
+  );
+
+  server.tool(
+    'create_component_variant',
+    `Add a new named variant to a component. Pass source_variant_id to clone an existing variant
+(new layer IDs are generated). Omit it to start from an empty root div.`,
+    {
+      component_id: z.string().describe('The component ID'),
+      name: z.string().describe('Variant name (e.g. "Small", "Dark", "Compact")'),
+      source_variant_id: z.string().optional()
+        .describe('Variant to clone. Omit for an empty starting tree.'),
+    },
+    async ({ component_id, name, source_variant_id }) => {
+      const component = await getComponentById(component_id);
+      if (!component) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: Component "${component_id}" not found.` }],
+          isError: true,
+        };
+      }
+      const existing: ComponentVariant[] = (component.variants && component.variants.length > 0)
+        ? component.variants
+        : [{ id: generateId(), name: 'Default', layers: component.layers || [] }];
+
+      let layers: Layer[];
+      if (source_variant_id) {
+        const source = existing.find((v) => v.id === source_variant_id);
+        if (!source) {
+          return {
+            content: [{ type: 'text' as const, text: `Error: Source variant "${source_variant_id}" not found.` }],
+            isError: true,
+          };
+        }
+        layers = source.layers.map(cloneLayerWithNewIds);
+      } else {
+        layers = [{
+          id: generateId(),
+          name: 'div',
+          customName: name,
+          classes: '',
+          children: [],
+        }];
+      }
+
+      const newVariant: ComponentVariant = { id: generateId(), name, layers };
+      const updatedVariants = [...existing, newVariant];
+
+      await updateComponent(component_id, { variants: updatedVariants });
+      broadcastComponentUpdated(component_id, { variants: updatedVariants }).catch(() => {});
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            message: `Variant "${name}" created`,
+            id: newVariant.id,
+            root_layer_id: layers[0]?.id,
+          }, null, 2),
+        }],
+      };
+    },
+  );
+
+  server.tool(
+    'update_component_variant',
+    'Rename a component variant. Use update_component_layers with variant_id to modify its tree.',
+    {
+      component_id: z.string().describe('The component ID'),
+      variant_id: z.string().describe('The variant ID'),
+      name: z.string().describe('New variant name'),
+    },
+    async ({ component_id, variant_id, name }) => {
+      const component = await getComponentById(component_id);
+      if (!component) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: Component "${component_id}" not found.` }],
+          isError: true,
+        };
+      }
+      const variants = component.variants || [];
+      const idx = variants.findIndex((v) => v.id === variant_id);
+      if (idx === -1) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: Variant "${variant_id}" not found.` }],
+          isError: true,
+        };
+      }
+      const updatedVariants = [...variants];
+      updatedVariants[idx] = { ...updatedVariants[idx], name };
+
+      await updateComponent(component_id, { variants: updatedVariants });
+      broadcastComponentUpdated(component_id, { variants: updatedVariants }).catch(() => {});
+
+      return { content: [{ type: 'text' as const, text: `Variant "${variant_id}" renamed to "${name}"` }] };
+    },
+  );
+
+  server.tool(
+    'delete_component_variant',
+    'Delete a named variant. The component must keep at least one variant — the primary cannot be deleted.',
+    {
+      component_id: z.string().describe('The component ID'),
+      variant_id: z.string().describe('The variant ID to delete'),
+    },
+    async ({ component_id, variant_id }) => {
+      const component = await getComponentById(component_id);
+      if (!component) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: Component "${component_id}" not found.` }],
+          isError: true,
+        };
+      }
+      const variants = component.variants || [];
+      if (variants.length <= 1) {
+        return {
+          content: [{ type: 'text' as const, text: 'Error: A component must keep at least one variant.' }],
+          isError: true,
+        };
+      }
+      if (variants[0]?.id === variant_id) {
+        return {
+          content: [{ type: 'text' as const, text: 'Error: The primary variant cannot be deleted. Reorder variants or delete a non-primary one.' }],
+          isError: true,
+        };
+      }
+      const updatedVariants = variants.filter((v) => v.id !== variant_id);
+      if (updatedVariants.length === variants.length) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: Variant "${variant_id}" not found.` }],
+          isError: true,
+        };
+      }
+
+      await updateComponent(component_id, { variants: updatedVariants });
+      broadcastComponentUpdated(component_id, { variants: updatedVariants }).catch(() => {});
+
+      return { content: [{ type: 'text' as const, text: `Variant "${variant_id}" deleted` }] };
+    },
+  );
+
+  server.tool(
+    'update_component_layers',
+    `Modify a component's layer tree. Works like batch_operations but for component layers.
+Use ref_id in add_layer to name layers, then reference them in later operations.
+
+Pass variant_id to target a specific named variant; omit it to update the primary variant
+(variants[0]), which is what most components have.`,
+    {
+      component_id: z.string().describe('The component ID'),
+      variant_id: z.string().optional()
+        .describe('Variant to modify. Omit to target the primary variant.'),
       operations: z.array(z.discriminatedUnion('type', [
         z.object({
           type: z.literal('add_layer'),
@@ -213,11 +393,11 @@ Use ref_id in add_layer to name layers, then reference them in later operations.
           type: z.literal('link_variable'),
           layer_id: z.string().describe('Layer ID or ref_id'),
           variable_id: z.string().describe('Component variable ID to link'),
-          variable_type: z.enum(['text', 'image', 'link', 'audio', 'video', 'icon']).default('text'),
+          variable_type: variableTypeEnum.default('text'),
         }),
       ])).min(1).max(50),
     },
-    async ({ component_id, operations }) => {
+    async ({ component_id, variant_id, operations }) => {
       const component = await getComponentById(component_id);
       if (!component) {
         return {
@@ -226,7 +406,20 @@ Use ref_id in add_layer to name layers, then reference them in later operations.
         };
       }
 
-      let layers = component.layers || [];
+      const variants: ComponentVariant[] = (component.variants && component.variants.length > 0)
+        ? component.variants
+        : [{ id: generateId(), name: 'Default', layers: component.layers || [] }];
+      const targetIdx = variant_id
+        ? variants.findIndex((v) => v.id === variant_id)
+        : 0;
+      if (targetIdx === -1) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: Variant "${variant_id}" not found.` }],
+          isError: true,
+        };
+      }
+
+      let layers = variants[targetIdx].layers || [];
       const refMap = new Map<string, string>();
       const results: Array<{ op: number; status: string; detail: string }> = [];
 
@@ -329,8 +522,9 @@ Use ref_id in add_layer to name layers, then reference them in later operations.
         };
       }
 
-      await updateComponent(component_id, { layers });
-      broadcastComponentLayersUpdated(component_id, layers).catch(() => {});
+      const updatedVariants = variants.map((v, i) => (i === targetIdx ? { ...v, layers } : v));
+      await updateComponent(component_id, { variants: updatedVariants });
+      broadcastComponentLayersUpdated(component_id, updatedVariants[0].layers).catch(() => {});
 
       const refEntries = Object.fromEntries(refMap);
       return {
@@ -380,6 +574,20 @@ function countLayers(layers: Layer[]): number {
 }
 
 /**
+ * Deep-clone a layer, regenerating IDs for the whole subtree.
+ * Used when cloning a variant so the new variant has fresh layer IDs.
+ */
+function cloneLayerWithNewIds(layer: Layer): Layer {
+  return {
+    ...layer,
+    id: generateId('lyr'),
+    ...(layer.children && Array.isArray(layer.children) && {
+      children: layer.children.map(cloneLayerWithNewIds),
+    }),
+  };
+}
+
+/**
  * Link a component variable to a layer's primary content slot.
  * Sets the variable's `id` field so the component system resolves overrides.
  */
@@ -388,6 +596,7 @@ function linkVariableToLayer(layer: Layer, variableId: string, variableType: str
 
   switch (variableType) {
     case 'text':
+    case 'rich_text':
       if (vars.text) {
         vars.text = { ...vars.text, id: variableId };
       } else {
@@ -432,6 +641,23 @@ function linkVariableToLayer(layer: Layer, variableId: string, variableType: str
         };
       }
       break;
+
+    case 'icon':
+      if (vars.icon) {
+        vars.icon = {
+          ...vars.icon,
+          src: { ...(vars.icon.src || { type: 'asset', data: { asset_id: null } }), id: variableId },
+        };
+      }
+      break;
+
+    case 'variant': {
+      // Variant variables target the layer's nested-component variant override.
+      // The runtime reads componentVariantId; the variable_id wires up the override slot.
+      const next = { ...layer } as Layer & { componentVariantVariableId?: string };
+      next.componentVariantVariableId = variableId;
+      return { ...next, variables: vars };
+    }
   }
 
   return { ...layer, variables: vars };

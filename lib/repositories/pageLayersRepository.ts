@@ -108,11 +108,17 @@ export async function getPublishedLayers(pageId: string): Promise<PageLayers | n
  * @param pageId - Page ID
  * @param layers - Page layers
  * @param additionalData - Optional additional fields (e.g., metadata)
+ * @param existingDraft - Optional pre-fetched draft to skip the internal
+ *   `getDraftLayers` read. Callers that already have the row (e.g. the MCP
+ *   page-layers cache) can pass it through to avoid a redundant DB round trip.
+ *   Pass `null` to assert "no draft exists" without re-checking. Omit (or
+ *   pass `undefined`) to preserve the original fetch-then-decide behavior.
  */
 export async function upsertDraftLayers(
   pageId: string,
   layers: Layer[],
-  additionalData?: Record<string, any>
+  additionalData?: Record<string, any>,
+  existingDraft?: PageLayers | null,
 ): Promise<PageLayers> {
   const client = await getSupabaseAdmin();
 
@@ -120,12 +126,14 @@ export async function upsertDraftLayers(
     throw new Error('Supabase not configured');
   }
 
-  // Check if draft exists
-  const existingDraft = await getDraftLayers(pageId);
+  // Use the caller-provided draft when available, otherwise fall back to a fresh read.
+  const resolvedDraft = existingDraft !== undefined
+    ? existingDraft
+    : await getDraftLayers(pageId);
 
   // Detect removed and changed layer content, update translations accordingly
-  if (existingDraft && existingDraft.layers) {
-    const oldContentMap = extractLayerContentMap(existingDraft.layers, 'page', pageId);
+  if (resolvedDraft && resolvedDraft.layers) {
+    const oldContentMap = extractLayerContentMap(resolvedDraft.layers, 'page', pageId);
     const newContentMap = extractLayerContentMap(layers, 'page', pageId);
 
     // Find removed keys (exist in old but not in new)
@@ -150,7 +158,7 @@ export async function upsertDraftLayers(
   // Use provided generated_css, or preserve the existing value for hash consistency
   const cssForHash = additionalData?.generated_css !== undefined
     ? (additionalData.generated_css as string) || null
-    : existingDraft?.generated_css || null;
+    : resolvedDraft?.generated_css || null;
 
   const contentHash = generatePageLayersHash({
     layers,
@@ -168,12 +176,12 @@ export async function upsertDraftLayers(
     Object.assign(updateData, additionalData);
   }
 
-  if (existingDraft) {
+  if (resolvedDraft) {
     // Update existing draft
     const { data, error } = await client
       .from('page_layers')
       .update(updateData)
-      .eq('id', existingDraft.id)
+      .eq('id', resolvedDraft.id)
       .eq('is_published', false)
       .select()
       .single();

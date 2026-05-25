@@ -2,8 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { Layer, LayerInteraction } from '@/types';
-import { getDraftLayers, upsertDraftLayers } from '@/lib/repositories/pageLayersRepository';
-import { broadcastLayersChanged } from '@/lib/mcp/broadcast';
+import { getCachedLayers as getPageLayers, saveCachedLayers } from '@/lib/mcp/page-layers';
 import { findLayerById, updateLayerById, generateId } from '@/lib/mcp/utils';
 import {
   ANIMATION_EASES,
@@ -11,14 +10,8 @@ import {
   buildInteractionFromPreset,
 } from '@/lib/mcp/animation-presets';
 
-async function getPageLayers(pageId: string): Promise<Layer[]> {
-  const pageLayers = await getDraftLayers(pageId);
-  return (pageLayers?.layers as Layer[]) || [];
-}
-
 async function savePageLayers(pageId: string, layers: Layer[]): Promise<void> {
-  await upsertDraftLayers(pageId, layers);
-  broadcastLayersChanged(pageId, layers).catch(() => {});
+  await saveCachedLayers(pageId, layers);
 }
 
 const presetEnum = z.enum(ANIMATION_PRESETS);

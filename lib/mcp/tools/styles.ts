@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { DesignProperties, Layer } from '@/types';
 import { getAllStyles, createStyle, updateStyle, deleteStyle } from '@/lib/repositories/layerStyleRepository';
-import { getDraftLayers, upsertDraftLayers } from '@/lib/repositories/pageLayersRepository';
+import { getCachedDraft, saveCachedLayers } from '@/lib/mcp/page-layers';
 import { findLayerById, updateLayerById, designToClassString } from '@/lib/mcp/utils';
 import { designSchema } from './shared-schemas';
 
@@ -45,7 +45,7 @@ export function registerStyleTools(server: McpServer) {
       style_id: z.string().describe('The style ID'),
     },
     async ({ page_id, layer_id, style_id }) => {
-      const pageLayers = await getDraftLayers(page_id);
+      const pageLayers = await getCachedDraft(page_id);
       if (!pageLayers) {
         return { content: [{ type: 'text' as const, text: `Error: Page "${page_id}" has no layers.` }], isError: true };
       }
@@ -57,7 +57,7 @@ export function registerStyleTools(server: McpServer) {
       }
 
       const updated = updateLayerById(layers, layer_id, (l) => ({ ...l, styleId: style_id }));
-      await upsertDraftLayers(page_id, updated);
+      await saveCachedLayers(page_id, updated);
 
       return { content: [{ type: 'text' as const, text: `Applied style "${style_id}" to "${layer.customName || layer.name}"` }] };
     },

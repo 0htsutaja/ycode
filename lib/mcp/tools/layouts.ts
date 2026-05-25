@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Layer } from '@/types';
-import { getDraftLayers, upsertDraftLayers } from '@/lib/repositories/pageLayersRepository';
+import { getCachedLayers, saveCachedLayers } from '@/lib/mcp/page-layers';
 import {
   getLayoutTemplate,
   getLayoutCategory,
@@ -9,7 +9,6 @@ import {
   getLayoutsByCategory,
 } from '@/lib/templates/blocks';
 import { findLayerById, insertLayer, canHaveChildren } from '@/lib/mcp/utils';
-import { broadcastLayersChanged } from '@/lib/mcp/broadcast';
 
 interface CatalogEntry {
   key: string;
@@ -73,8 +72,7 @@ Use list_layouts to see available layouts.`,
 
       const category = getLayoutCategory(layout_key);
 
-      const pageLayers = await getDraftLayers(page_id);
-      let layers = (pageLayers?.layers as Layer[]) || [];
+      let layers: Layer[] = await getCachedLayers(page_id);
 
       if (parent_layer_id) {
         const parent = findLayerById(layers, parent_layer_id);
@@ -104,8 +102,7 @@ Use list_layouts to see available layouts.`,
         layers = [...layers, layoutLayer];
       }
 
-      await upsertDraftLayers(page_id, layers);
-      broadcastLayersChanged(page_id, layers).catch(() => {});
+      await saveCachedLayers(page_id, layers);
 
       return {
         content: [{

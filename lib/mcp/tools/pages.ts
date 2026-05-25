@@ -82,7 +82,8 @@ export function registerPageTools(server: McpServer) {
         classes: '',
         children: [],
       }];
-      await upsertDraftLayers(page.id, initialLayers);
+      // Brand-new page guarantees no existing draft — assert it to skip the repo's pre-read.
+      await upsertDraftLayers(page.id, initialLayers, undefined, null);
 
       broadcastPageCreated(page).catch(() => {});
       broadcastLayersChanged(page.id, initialLayers).catch(() => {});

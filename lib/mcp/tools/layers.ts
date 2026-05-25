@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { DesignProperties, Layer, LinkSettings } from '@/types';
-import { getDraftLayers, upsertDraftLayers } from '@/lib/repositories/pageLayersRepository';
 import {
   findLayerById,
   updateLayerById,
@@ -16,17 +15,11 @@ import {
 } from '@/lib/mcp/utils';
 import type { RichTextBlock } from '@/lib/mcp/utils';
 import { layerToExportHtml } from '@/lib/html-layer-converter';
-import { broadcastLayersChanged } from '@/lib/mcp/broadcast';
+import { getCachedLayers as getPageLayers, saveCachedLayers } from '@/lib/mcp/page-layers';
 import { designSchema, richTextBlockSchema, templateEnum } from './shared-schemas';
 
-async function getPageLayers(pageId: string): Promise<Layer[]> {
-  const pageLayers = await getDraftLayers(pageId);
-  return (pageLayers?.layers as Layer[]) || [];
-}
-
 async function savePageLayers(pageId: string, layers: Layer[]): Promise<void> {
-  await upsertDraftLayers(pageId, layers);
-  broadcastLayersChanged(pageId, layers).catch(() => {});
+  await saveCachedLayers(pageId, layers);
 }
 
 export function registerLayerTools(server: McpServer) {

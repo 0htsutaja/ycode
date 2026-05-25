@@ -53,6 +53,190 @@ const EXAMPLE_PROMPTS = {
   ],
 };
 
+// Reference resources are fully static — their content is derived from compile-time
+// imports (ELEMENT_TEMPLATES, PRESET_CATALOG, ANIMATION_EASES) and inline constants.
+// Stringify them once at module load so every resource read just hands back the
+// cached string instead of re-serializing on every fetch.
+const ELEMENTS_REFERENCE_JSON = JSON.stringify({
+  templates: getAvailableTemplates(),
+  nesting_rules: {
+    cannot_have_children: [
+      'icon', 'image', 'audio', 'video', 'iframe',
+      'text', 'span', 'label', 'hr',
+      'input', 'textarea', 'select', 'checkbox', 'radio',
+      'htmlEmbed',
+    ],
+    section_cannot_contain_section: true,
+    links_cannot_nest: true,
+    component_instances_are_readonly: true,
+  },
+  element_types: {
+    structure: {
+      section: 'Full-width page section.',
+      div: 'Generic container.',
+      container: 'Max-width container (1280px) with padding.',
+      columns: '2-column flexbox layout.',
+      grid: '2x2 CSS Grid layout.',
+      collection: 'CMS collection list (repeats children for each item).',
+      hr: 'Horizontal divider line.',
+      table: 'Data table (<table>). Ships with header + 2 body rows.',
+      thead: '<thead> — add inside a table.',
+      tbody: '<tbody> — add inside a table.',
+      tr: '<tr> — add inside thead or tbody.',
+      td: '<td> — add inside a tr.',
+      th: '<th> — add inside a thead tr.',
+    },
+    content: {
+      heading: 'Heading text (h1). 48px bold.',
+      text: 'Paragraph text (p). 16px.',
+      richText: 'Rich text block. Use set_rich_text_content or rich_content in add_layer.',
+    },
+    media: {
+      image: 'Image element. Use update_layer_image to set asset.',
+      video: 'Video player. Use update_layer_video to set source.',
+      audio: 'Audio player.',
+      icon: 'SVG icon. 24x24px.',
+      iframe: 'Iframe embed. Use update_layer_iframe to set URL.',
+    },
+    interactive: {
+      button: 'Button with text child. Use update_layer_link to set destination.',
+      form: 'Form container.',
+      input: 'Text input.',
+      textarea: 'Multi-line text area.',
+      select: 'Dropdown select input.',
+      checkbox: 'Checkbox input.',
+      radio: 'Radio button input.',
+      filter: 'Collection filter input.',
+      label: 'Form label element.',
+    },
+    utility: {
+      htmlEmbed: 'Custom HTML/CSS/JS code. Set via update_layer_settings.',
+      slider: 'Carousel with navigation, pagination, autoplay. Configure via update_layer_settings.',
+      lightbox: 'Fullscreen gallery with thumbnails, navigation, zoom.',
+      map: 'Interactive map element.',
+      localeSelector: 'Language switcher for multi-language sites.',
+    },
+  },
+});
+
+const DESIGN_REFERENCE_JSON = JSON.stringify({
+  instructions: 'Set isActive: true on any category for it to take effect. Use ui_state parameter for hover/focus/active styles. Use bgGradientVars for gradient backgrounds.',
+  categories: {
+    layout: {
+      display: { type: 'enum', values: ['Flex', 'block', 'inline-block', 'grid', 'hidden'] },
+      flexDirection: { type: 'enum', values: ['row', 'column', 'row-reverse', 'column-reverse'] },
+      justifyContent: { type: 'enum', values: ['start', 'end', 'center', 'between', 'around', 'evenly'] },
+      alignItems: { type: 'enum', values: ['start', 'end', 'center', 'baseline', 'stretch'] },
+      gap: { type: 'css_value', examples: ['16px', '1rem'] },
+      gridTemplateColumns: { type: 'string', examples: ['4', '1fr 1fr 1fr', 'repeat(3, 1fr)'], description: 'A bare integer is accepted and normalized to repeat(N, 1fr).' },
+    },
+    typography: {
+      fontSize: { type: 'css_value', examples: ['16px', '48px'] },
+      fontWeight: { type: 'string', examples: ['400', '600', '700'] },
+      fontFamily: { type: 'string', examples: ['DM Sans', 'Plus Jakarta Sans'] },
+      lineHeight: { type: 'css_value', examples: ['1.1', '1.5'] },
+      letterSpacing: { type: 'css_value', examples: ['-0.03em', '0'] },
+      textAlign: { type: 'enum', values: ['left', 'center', 'right'] },
+      color: { type: 'color', examples: ['#171717', '#ffffff'] },
+    },
+    spacing: { padding: { type: 'css_value' }, margin: { type: 'css_value' } },
+    sizing: {
+      width: { type: 'css_value', examples: ['100%', 'auto'] },
+      maxWidth: { type: 'css_value', examples: ['1280px'] },
+      aspectRatio: { type: 'string', examples: ['16/9', '1/1'] },
+    },
+    borders: {
+      borderRadius: { type: 'css_value', examples: ['12px', '9999px'] },
+      borderWidth: { type: 'css_value' },
+      borderColor: { type: 'color' },
+    },
+    backgrounds: {
+      backgroundColor: { type: 'color', examples: ['#ffffff', '#0a0a0a'] },
+      backgroundClip: { type: 'enum', values: ['text', 'border', 'padding'] },
+      bgGradientVars: {
+        type: 'record',
+        description: 'CSS gradient values keyed by var name. "--bg-img" for desktop neutral.',
+        examples: [{ '--bg-img': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }],
+      },
+    },
+    effects: {
+      opacity: { type: 'string' },
+      boxShadow: { type: 'string' },
+    },
+    positioning: {
+      position: { type: 'enum', values: ['relative', 'absolute', 'fixed', 'sticky'] },
+      zIndex: { type: 'string' },
+    },
+    transforms: {
+      translateX: { type: 'css_value', examples: ['10px', '50%'] },
+      translateY: { type: 'css_value', examples: ['10px', '50%'] },
+      scale: { type: 'css_value', examples: ['1', '1.05', '0.95'] },
+      rotate: { type: 'css_value', examples: ['0deg', '45deg', '-90deg'] },
+      skewX: { type: 'css_value', examples: ['0deg', '10deg'] },
+      skewY: { type: 'css_value', examples: ['0deg', '10deg'] },
+      transformOrigin: { type: 'string', examples: ['center', 'top left'] },
+    },
+    transitions: {
+      transitionProperty: { type: 'string', examples: ['all', 'colors', 'transform'] },
+      transitionDuration: { type: 'css_value', examples: ['150ms', '300ms'] },
+      transitionTimingFunction: { type: 'enum', values: ['linear', 'in', 'out', 'in-out'] },
+      transitionDelay: { type: 'css_value', examples: ['0ms', '100ms'] },
+    },
+  },
+});
+
+const ANIMATION_PRESETS_REFERENCE_JSON = JSON.stringify({
+  instructions: 'Use add_animation with a preset key for the common cases. Drop down to set_layer_interactions only when you need full GSAP control.',
+  presets: PRESET_CATALOG,
+  triggers: {
+    click: 'Fires on user click. Use for affordances (pulse, shake).',
+    hover: 'Fires on mouseenter, reverses on mouseleave. Auto-yoyos so you only define the "to" state.',
+    'scroll-into-view': 'Fires once when the element enters the viewport. Default for reveal presets.',
+    'while-scrolling': 'Tween is scrubbed by scroll position. Set timeline.scrub. Use for parallax / progress effects.',
+    load: 'Fires on page load. Use for loops or on-load entrance choreography.',
+  },
+  eases: ANIMATION_EASES,
+  tween_value_formats: {
+    'x | y | width | height': 'CSS length string with unit ("100px", "50%", "5rem").',
+    scale: 'Unitless number string ("1", "1.05").',
+    'rotation | skewX | skewY': 'Degrees with suffix ("45deg", "-90deg").',
+    autoAlpha: 'Opacity 0-100 as plain string ("0", "100") — no % suffix.',
+    backgroundColor: 'Hex or rgb() string ("#ffffff").',
+    display: '"visible" or "hidden".',
+  },
+  tween_position: {
+    number: 'Absolute time in seconds from timeline start.',
+    '">"': 'Start after the previous tween ends.',
+    '"<"': 'Start with the previous tween (overlap).',
+  },
+  apply_styles_modes: {
+    'on-load': 'Apply the "from" value immediately on page load. Use for reveal animations to avoid FOUC.',
+    'on-trigger': 'Apply the "from" value only when the trigger fires. Use for hover/click (element looks normal until interacted with).',
+  },
+  interaction_shape_example: {
+    id: 'int_xxx (auto-generated if omitted)',
+    trigger: 'scroll-into-view',
+    timeline: {
+      breakpoints: ['desktop', 'tablet', 'mobile'],
+      repeat: 0,
+      yoyo: false,
+      toggleActions: 'play none none none',
+    },
+    tweens: [{
+      id: 'twn_xxx (auto-generated if omitted)',
+      layer_id: 'lyr_xxx',
+      position: 0,
+      duration: 0.6,
+      ease: 'power1.out',
+      from: { autoAlpha: '0', y: '40px' },
+      to: { autoAlpha: '100', y: '0px' },
+      apply_styles: { autoAlpha: 'on-load', y: 'on-load' },
+    }],
+  },
+});
+
+const PROMPTS_REFERENCE_JSON = JSON.stringify(EXAMPLE_PROMPTS);
+
 export function registerReferenceResources(server: McpServer) {
   server.resource(
     'elements-reference',
@@ -65,67 +249,7 @@ export function registerReferenceResources(server: McpServer) {
       contents: [{
         uri: 'ycode://reference/elements',
         mimeType: 'application/json',
-        text: JSON.stringify({
-          templates: getAvailableTemplates(),
-          nesting_rules: {
-            cannot_have_children: [
-              'icon', 'image', 'audio', 'video', 'iframe',
-              'text', 'span', 'label', 'hr',
-              'input', 'textarea', 'select', 'checkbox', 'radio',
-              'htmlEmbed',
-            ],
-            section_cannot_contain_section: true,
-            links_cannot_nest: true,
-            component_instances_are_readonly: true,
-          },
-          element_types: {
-            structure: {
-              section: 'Full-width page section.',
-              div: 'Generic container.',
-              container: 'Max-width container (1280px) with padding.',
-              columns: '2-column flexbox layout.',
-              grid: '2x2 CSS Grid layout.',
-              collection: 'CMS collection list (repeats children for each item).',
-              hr: 'Horizontal divider line.',
-              table: 'Data table (<table>). Ships with header + 2 body rows.',
-              thead: '<thead> — add inside a table.',
-              tbody: '<tbody> — add inside a table.',
-              tr: '<tr> — add inside thead or tbody.',
-              td: '<td> — add inside a tr.',
-              th: '<th> — add inside a thead tr.',
-            },
-            content: {
-              heading: 'Heading text (h1). 48px bold.',
-              text: 'Paragraph text (p). 16px.',
-              richText: 'Rich text block. Use set_rich_text_content or rich_content in add_layer.',
-            },
-            media: {
-              image: 'Image element. Use update_layer_image to set asset.',
-              video: 'Video player. Use update_layer_video to set source.',
-              audio: 'Audio player.',
-              icon: 'SVG icon. 24x24px.',
-              iframe: 'Iframe embed. Use update_layer_iframe to set URL.',
-            },
-            interactive: {
-              button: 'Button with text child. Use update_layer_link to set destination.',
-              form: 'Form container.',
-              input: 'Text input.',
-              textarea: 'Multi-line text area.',
-              select: 'Dropdown select input.',
-              checkbox: 'Checkbox input.',
-              radio: 'Radio button input.',
-              filter: 'Collection filter input.',
-              label: 'Form label element.',
-            },
-            utility: {
-              htmlEmbed: 'Custom HTML/CSS/JS code. Set via update_layer_settings.',
-              slider: 'Carousel with navigation, pagination, autoplay. Configure via update_layer_settings.',
-              lightbox: 'Fullscreen gallery with thumbnails, navigation, zoom.',
-              map: 'Interactive map element.',
-              localeSelector: 'Language switcher for multi-language sites.',
-            },
-          },
-        }),
+        text: ELEMENTS_REFERENCE_JSON,
       }],
     }),
   );
@@ -141,71 +265,7 @@ export function registerReferenceResources(server: McpServer) {
       contents: [{
         uri: 'ycode://reference/design-properties',
         mimeType: 'application/json',
-        text: JSON.stringify({
-          instructions: 'Set isActive: true on any category for it to take effect. Use ui_state parameter for hover/focus/active styles. Use bgGradientVars for gradient backgrounds.',
-          categories: {
-            layout: {
-              display: { type: 'enum', values: ['Flex', 'block', 'inline-block', 'grid', 'hidden'] },
-              flexDirection: { type: 'enum', values: ['row', 'column', 'row-reverse', 'column-reverse'] },
-              justifyContent: { type: 'enum', values: ['start', 'end', 'center', 'between', 'around', 'evenly'] },
-              alignItems: { type: 'enum', values: ['start', 'end', 'center', 'baseline', 'stretch'] },
-              gap: { type: 'css_value', examples: ['16px', '1rem'] },
-              gridTemplateColumns: { type: 'string', examples: ['4', '1fr 1fr 1fr', 'repeat(3, 1fr)'], description: 'A bare integer is accepted and normalized to repeat(N, 1fr).' },
-            },
-            typography: {
-              fontSize: { type: 'css_value', examples: ['16px', '48px'] },
-              fontWeight: { type: 'string', examples: ['400', '600', '700'] },
-              fontFamily: { type: 'string', examples: ['DM Sans', 'Plus Jakarta Sans'] },
-              lineHeight: { type: 'css_value', examples: ['1.1', '1.5'] },
-              letterSpacing: { type: 'css_value', examples: ['-0.03em', '0'] },
-              textAlign: { type: 'enum', values: ['left', 'center', 'right'] },
-              color: { type: 'color', examples: ['#171717', '#ffffff'] },
-            },
-            spacing: { padding: { type: 'css_value' }, margin: { type: 'css_value' } },
-            sizing: {
-              width: { type: 'css_value', examples: ['100%', 'auto'] },
-              maxWidth: { type: 'css_value', examples: ['1280px'] },
-              aspectRatio: { type: 'string', examples: ['16/9', '1/1'] },
-            },
-            borders: {
-              borderRadius: { type: 'css_value', examples: ['12px', '9999px'] },
-              borderWidth: { type: 'css_value' },
-              borderColor: { type: 'color' },
-            },
-            backgrounds: {
-              backgroundColor: { type: 'color', examples: ['#ffffff', '#0a0a0a'] },
-              backgroundClip: { type: 'enum', values: ['text', 'border', 'padding'] },
-              bgGradientVars: {
-                type: 'record',
-                description: 'CSS gradient values keyed by var name. "--bg-img" for desktop neutral.',
-                examples: [{ '--bg-img': 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }],
-              },
-            },
-            effects: {
-              opacity: { type: 'string' },
-              boxShadow: { type: 'string' },
-            },
-            positioning: {
-              position: { type: 'enum', values: ['relative', 'absolute', 'fixed', 'sticky'] },
-              zIndex: { type: 'string' },
-            },
-            transforms: {
-              translateX: { type: 'css_value', examples: ['10px', '50%'] },
-              translateY: { type: 'css_value', examples: ['10px', '50%'] },
-              scale: { type: 'css_value', examples: ['1', '1.05', '0.95'] },
-              rotate: { type: 'css_value', examples: ['0deg', '45deg', '-90deg'] },
-              skewX: { type: 'css_value', examples: ['0deg', '10deg'] },
-              skewY: { type: 'css_value', examples: ['0deg', '10deg'] },
-              transformOrigin: { type: 'string', examples: ['center', 'top left'] },
-            },
-            transitions: {
-              transitionProperty: { type: 'string', examples: ['all', 'colors', 'transform'] },
-              transitionDuration: { type: 'css_value', examples: ['150ms', '300ms'] },
-              transitionTimingFunction: { type: 'enum', values: ['linear', 'in', 'out', 'in-out'] },
-              transitionDelay: { type: 'css_value', examples: ['0ms', '100ms'] },
-            },
-          },
-        }),
+        text: DESIGN_REFERENCE_JSON,
       }],
     }),
   );
@@ -221,55 +281,7 @@ export function registerReferenceResources(server: McpServer) {
       contents: [{
         uri: 'ycode://reference/animation-presets',
         mimeType: 'application/json',
-        text: JSON.stringify({
-          instructions: 'Use add_animation with a preset key for the common cases. Drop down to set_layer_interactions only when you need full GSAP control.',
-          presets: PRESET_CATALOG,
-          triggers: {
-            click: 'Fires on user click. Use for affordances (pulse, shake).',
-            hover: 'Fires on mouseenter, reverses on mouseleave. Auto-yoyos so you only define the "to" state.',
-            'scroll-into-view': 'Fires once when the element enters the viewport. Default for reveal presets.',
-            'while-scrolling': 'Tween is scrubbed by scroll position. Set timeline.scrub. Use for parallax / progress effects.',
-            load: 'Fires on page load. Use for loops or on-load entrance choreography.',
-          },
-          eases: ANIMATION_EASES,
-          tween_value_formats: {
-            'x | y | width | height': 'CSS length string with unit ("100px", "50%", "5rem").',
-            scale: 'Unitless number string ("1", "1.05").',
-            'rotation | skewX | skewY': 'Degrees with suffix ("45deg", "-90deg").',
-            autoAlpha: 'Opacity 0-100 as plain string ("0", "100") — no % suffix.',
-            backgroundColor: 'Hex or rgb() string ("#ffffff").',
-            display: '"visible" or "hidden".',
-          },
-          tween_position: {
-            number: 'Absolute time in seconds from timeline start.',
-            '">"': 'Start after the previous tween ends.',
-            '"<"': 'Start with the previous tween (overlap).',
-          },
-          apply_styles_modes: {
-            'on-load': 'Apply the "from" value immediately on page load. Use for reveal animations to avoid FOUC.',
-            'on-trigger': 'Apply the "from" value only when the trigger fires. Use for hover/click (element looks normal until interacted with).',
-          },
-          interaction_shape_example: {
-            id: 'int_xxx (auto-generated if omitted)',
-            trigger: 'scroll-into-view',
-            timeline: {
-              breakpoints: ['desktop', 'tablet', 'mobile'],
-              repeat: 0,
-              yoyo: false,
-              toggleActions: 'play none none none',
-            },
-            tweens: [{
-              id: 'twn_xxx (auto-generated if omitted)',
-              layer_id: 'lyr_xxx',
-              position: 0,
-              duration: 0.6,
-              ease: 'power1.out',
-              from: { autoAlpha: '0', y: '40px' },
-              to: { autoAlpha: '100', y: '0px' },
-              apply_styles: { autoAlpha: 'on-load', y: 'on-load' },
-            }],
-          },
-        }),
+        text: ANIMATION_PRESETS_REFERENCE_JSON,
       }],
     }),
   );
@@ -285,7 +297,7 @@ export function registerReferenceResources(server: McpServer) {
       contents: [{
         uri: 'ycode://reference/prompts',
         mimeType: 'application/json',
-        text: JSON.stringify(EXAMPLE_PROMPTS),
+        text: PROMPTS_REFERENCE_JSON,
       }],
     }),
   );

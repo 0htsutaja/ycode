@@ -112,6 +112,7 @@ export async function exportSite(): Promise<ExportJob> {
           const html = buildDocument({
             page: resolved.page,
             bodyHtml: resolved.bodyHtml,
+            bodyClasses: resolved.bodyClasses,
             publishedCss: publishedCss ?? null,
             colorVariablesCss: colorVariablesCss ?? null,
             includeSwiper: resolved.hasSlider,

@@ -22,6 +22,7 @@ import type { Locale, Page, PageFolder, Translation } from '@/types'
 
 import {
   collectInteractions,
+  getBodyClasses,
   layerTreeContains,
   renderPageBody,
   type ExportedInteraction,
@@ -31,6 +32,8 @@ import { computeOutputKey } from './paths'
 export interface ResolvedPage {
   page: Page
   bodyHtml: string
+  /** Class string from the synthetic `body` layer (background, text color, fonts). */
+  bodyClasses: string
   outputKey: string
   hasSlider: boolean
   interactions: ExportedInteraction[]
@@ -166,6 +169,7 @@ function renderResolved(
   return {
     page,
     bodyHtml,
+    bodyClasses: getBodyClasses(layers),
     outputKey,
     hasSlider: layerTreeContains(layers, 'slider'),
     interactions: collectInteractions(layers),

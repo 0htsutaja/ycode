@@ -10,8 +10,21 @@
 
 import { layerToHtml, buildAnchorMap } from '@/lib/page-fetcher'
 import type { PageData } from '@/lib/page-fetcher'
+import { getClassesString } from '@/lib/layer-utils'
 
 import type { Layer, Page, PageFolder } from '@/types'
+
+/**
+ * Extract the class string from the synthetic `body` layer so the exporter
+ * can apply it to the real `<body>` element. The editor's Canvas does the
+ * same thing — without it, the user's body background / text color / fonts
+ * are silently dropped from the export.
+ */
+export function getBodyClasses(layers: Layer[] | null | undefined): string {
+  if (!layers || layers.length === 0) return ''
+  const bodyLayer = layers.find((l) => l.id === 'body' || l.name === 'body')
+  return bodyLayer ? getClassesString(bodyLayer) : ''
+}
 
 // =============================================================================
 // Render context + body rendering
@@ -386,6 +399,8 @@ export function layerTreeContains(layers: Layer[], name: string): boolean {
 export interface BuildHtmlInput {
   page: Page
   bodyHtml: string
+  /** Class string from the synthetic `body` layer (background, text color, fonts). */
+  bodyClasses?: string
   publishedCss: string | null
   colorVariablesCss: string | null
   includeSwiper: boolean
@@ -395,6 +410,7 @@ export interface BuildHtmlInput {
 export function buildDocument({
   page,
   bodyHtml,
+  bodyClasses,
   publishedCss,
   colorVariablesCss,
   includeSwiper,
@@ -448,7 +464,7 @@ export function buildDocument({
     '<head>',
     ...head.map((line) => indent + line),
     '</head>',
-    '<body>',
+    bodyClasses ? `<body class="${escapeHtml(bodyClasses)}">` : '<body>',
     bodyHtml,
     ...trailingScripts,
     '</body>',

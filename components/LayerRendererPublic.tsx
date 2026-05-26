@@ -15,7 +15,7 @@
 
 import React, { useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
 import dynamic from 'next/dynamic';
-import type { Layer, Locale, FormSettings, Component, DesignColorVariable } from '@/types';
+import type { Layer, Locale, FormSettings, Component, DesignColorVariable, PasswordProtectionContext } from '@/types';
 import { getLayerHtmlTag, getClassesString, getText, resolveFieldValue, isTextContentLayer, getCollectionVariable, filterDisabledSliderLayers } from '@/lib/layer-utils';
 import { getMapIframeProps, DEFAULT_MAP_SETTINGS, resolveMarkerColor } from '@/lib/map-utils';
 import { SWIPER_CLASS_MAP, SWIPER_DATA_ATTR_MAP } from '@/lib/slider-constants';
@@ -80,18 +80,6 @@ function buildAnchorMap(layers: Layer[]): Record<string, string> {
   traverse(layers);
   return map;
 }
-
-/**
- * Context for password-protected page gating. When supplied, `form` layers with
- * `settings.form.form_type === 'password_protected'` (e.g. on the 401 system page)
- * submit to /api/page-auth/verify instead of /ycode/api/form-submissions.
- */
-export type PasswordProtectionContext = {
-  pageId?: string;
-  folderId?: string;
-  redirectUrl: string;
-  isPublished: boolean;
-};
 
 interface LayerRendererPublicProps {
   layers: Layer[];

@@ -1,4 +1,5 @@
 import { redirect, permanentRedirect } from 'next/navigation';
+import { connection } from 'next/server';
 import { unstable_cache } from 'next/cache';
 import { addCacheTag } from '@vercel/functions';
 import Link from 'next/link';
@@ -168,8 +169,9 @@ export default async function Home() {
   const folders = await fetchCachedFoldersForAuth();
   const protectionCheck = getPasswordProtection(data.page, folders, null);
 
-  // If homepage is protected, read auth cookie and re-check unlock state.
+  // If homepage is protected, opt into dynamic rendering and read the auth cookie.
   if (protectionCheck.isProtected) {
+    await connection();
     const authCookie = await parseAuthCookie();
     const protection = getPasswordProtection(data.page, folders, authCookie);
 
@@ -252,21 +254,18 @@ export async function generateMetadata(): Promise<Metadata> {
     };
   }
 
-  // Check password protection - don't leak metadata for protected pages.
-  // First check without cookies() to avoid forcing dynamic metadata for public pages.
+  // Don't leak metadata for protected pages. Checking without cookies keeps
+  // generateMetadata fully static — no need to verify unlock state here since
+  // the page component handles access gating.
   const folders = await fetchCachedFoldersForAuth();
   const protectionCheck = getPasswordProtection(data.page, folders, null);
 
   if (protectionCheck.isProtected) {
-    const authCookie = await parseAuthCookie();
-    const protection = getPasswordProtection(data.page, folders, authCookie);
-    if (!protection.isUnlocked) {
-      return {
-        title: 'Password Protected',
-        description: 'This page is password protected.',
-        robots: { index: false, follow: false },
-      };
-    }
+    return {
+      title: 'Password Protected',
+      description: 'This page is password protected.',
+      robots: { index: false, follow: false },
+    };
   }
 
   const { meta, baseUrl } = await unstable_cache(

@@ -169,6 +169,13 @@ export interface DesignProperties {
 
 export type FormType = 'standard' | 'password_protected';
 
+export type PasswordProtectionContext = {
+  pageId?: string;
+  folderId?: string;
+  redirectUrl: string;
+  isPublished: boolean;
+};
+
 export interface FormSettings {
   // 'password_protected' wires the form to the page-auth verify endpoint and gates access to
   // password-protected pages; 'standard' (default) submits to /ycode/api/form-submissions.

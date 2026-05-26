@@ -22,7 +22,7 @@ import { getItemsWithValues, getItemsWithValuesByIds } from '@/lib/repositories/
 import { getFieldsByCollectionId } from '@/lib/repositories/collectionFieldRepository';
 import { REF_PAGE_PREFIX, REF_COLLECTION_PREFIX, isCollectionItemKeyword, parseCollectionLinkValue } from '@/lib/link-utils';
 import { getClassesString, hasPasswordFormLayer } from '@/lib/layer-utils';
-import type { Layer, Component, Page, CollectionItemWithValues, CollectionField, Locale, PageFolder } from '@/types';
+import type { Layer, Component, Page, CollectionItemWithValues, CollectionField, Locale, PageFolder, PasswordProtectionContext } from '@/types';
 
 interface PageLinkRef { collection_item_id: string; page_id: string }
 
@@ -209,14 +209,6 @@ function hasAnyInteractions(layers: Layer[]): boolean {
   }
   return false;
 }
-
-/** Password protection context for 401 error pages */
-export type PasswordProtectionContext = {
-  pageId?: string;
-  folderId?: string;
-  redirectUrl: string;
-  isPublished: boolean;
-};
 
 interface PageRendererProps {
   page: Page;

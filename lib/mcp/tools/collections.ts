@@ -11,7 +11,6 @@ import {
   reorderFields,
 } from '@/lib/repositories/collectionFieldRepository';
 import {
-  getItemsByCollectionId,
   getItemsWithValues,
   createItem,
   updateItem,
@@ -132,14 +131,14 @@ FIELD TYPES:
 
   server.tool(
     'list_collection_items',
-    'List items in a collection with their field values.',
+    'List items in a collection with their field values. Each item includes a `values` object keyed by field ID containing the actual content (text, references, etc.).',
     {
       collection_id: z.string().describe('The collection ID'),
       search: z.string().optional().describe('Search term to filter items'),
     },
     async ({ collection_id, search }) => {
       const fields = await getFieldsByCollectionId(collection_id);
-      const { items, total } = await getItemsByCollectionId(collection_id, false, search ? { search } : undefined);
+      const { items, total } = await getItemsWithValues(collection_id, false, search ? { search } : undefined);
       return {
         content: [{
           type: 'text' as const,

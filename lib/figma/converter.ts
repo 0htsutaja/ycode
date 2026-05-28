@@ -82,16 +82,39 @@ function mapSpacing(node: YcodeNode): SpacingDesign | undefined {
   };
 }
 
-function mapSizing(node: YcodeNode): SizingDesign | undefined {
+function mapSizing(
+  node: YcodeNode,
+  parentFlexDir?: string | null,
+): { sizing: SizingDesign; extraClasses: string[] } {
   const sizing: SizingDesign = { isActive: true };
+  const extraClasses: string[] = [];
 
-  if (node.widthType === 'fill') sizing.width = '100%';
-  else if (node.widthType === 'hug') sizing.width = 'fit-content';
-  else sizing.width = Math.round(node.width) + 'px';
+  const isMainAxisHorizontal = parentFlexDir === 'row';
+  const isMainAxisVertical = parentFlexDir === 'column';
 
-  if (node.heightType === 'fill') sizing.height = '100%';
-  else if (node.heightType === 'hug') sizing.height = 'fit-content';
-  else sizing.height = Math.round(node.height) + 'px';
+  if (node.widthType === 'fill') {
+    if (isMainAxisHorizontal) {
+      extraClasses.push('flex-1');
+    } else {
+      sizing.width = '100%';
+    }
+  } else if (node.widthType === 'hug') {
+    sizing.width = 'fit-content';
+  } else {
+    sizing.width = Math.round(node.width) + 'px';
+  }
+
+  if (node.heightType === 'fill') {
+    if (isMainAxisVertical) {
+      extraClasses.push('flex-1');
+    } else {
+      sizing.height = '100%';
+    }
+  } else if (node.heightType === 'hug') {
+    sizing.height = 'fit-content';
+  } else {
+    sizing.height = Math.round(node.height) + 'px';
+  }
 
   const minW = px(node.minWidth);
   if (minW) sizing.minWidth = minW;
@@ -107,7 +130,7 @@ function mapSizing(node: YcodeNode): SizingDesign | undefined {
 
   if (node.overflow === 'hidden') sizing.overflow = 'hidden';
 
-  return sizing;
+  return { sizing, extraClasses };
 }
 
 function mapBackgrounds(node: YcodeNode): BackgroundsDesign | undefined {
@@ -334,7 +357,11 @@ function parseSpansToTextNodes(html: string): TipTapTextNode[] {
 
 // ─── Node Conversion ────────────────────────────────────────────────────────
 
-async function convertNode(node: YcodeNode): Promise<Layer> {
+async function convertNode(
+  node: YcodeNode,
+  parentFlexDir?: string | null,
+  isRoot = false,
+): Promise<Layer> {
   const id = generateId('lyr');
   const design: DesignProperties = {};
 
@@ -344,8 +371,12 @@ async function convertNode(node: YcodeNode): Promise<Layer> {
   const spacing = mapSpacing(node);
   if (spacing) design.spacing = spacing;
 
-  const sizing = mapSizing(node);
-  if (sizing) design.sizing = sizing;
+  const { sizing, extraClasses } = mapSizing(node, parentFlexDir);
+  if (isRoot) {
+    sizing.width = '100%';
+    sizing.height = 'fit-content';
+  }
+  design.sizing = sizing;
 
   const backgrounds = mapBackgrounds(node);
   if (backgrounds) design.backgrounds = backgrounds;
@@ -435,11 +466,17 @@ async function convertNode(node: YcodeNode): Promise<Layer> {
   }
 
   if (node.children?.length) {
-    const childLayers = await Promise.all(node.children.map(convertNode));
+    const thisFlexDir = node.flexDirection || null;
+    const childLayers = await Promise.all(
+      node.children.map(child => convertNode(child, thisFlexDir))
+    );
     layer.children = childLayers;
   }
 
   layer.classes = designToClassString(design);
+  if (extraClasses.length > 0) {
+    layer.classes = layer.classes + ' ' + extraClasses.join(' ');
+  }
 
   console.log(`[FigmaConvert] ${node.__class} "${node.name}"`, { classes: layer.classes });
 
@@ -452,6 +489,8 @@ async function convertNode(node: YcodeNode): Promise<Layer> {
 
 export async function convertFigmaToLayers(payload: YcodeFigmaPayload): Promise<Layer[]> {
   console.log('[FigmaConvert] payload:', payload.nodes.length, 'nodes');
-  const layers = await Promise.all(payload.nodes.map(convertNode));
+  const layers = await Promise.all(
+    payload.nodes.map(node => convertNode(node, null, true))
+  );
   return layers;
 }

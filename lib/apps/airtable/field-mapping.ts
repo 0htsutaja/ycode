@@ -5,7 +5,7 @@
  * transforms Airtable field values into CMS-compatible strings.
  */
 
-import type { CollectionFieldType } from '@/types';
+import type { CollectionFieldType, CollectionLinkValue } from '@/types';
 import type { AirtableFieldType } from './types';
 import { markdownToTiptapJson } from './markdown-to-tiptap';
 
@@ -232,16 +232,38 @@ export function transformFieldValue(
         ? (value as Record<string, unknown>).text as string ?? null
         : String(value);
 
+    case 'url':
+      // CMS 'link' fields store a CollectionLinkValue JSON object, not a raw URL.
+      return cmsType === 'link' ? toLinkValueJson(value, airtableType) : String(value);
+
     case 'button': {
       if (typeof value !== 'object' || value === null) return null;
       const btn = value as Record<string, unknown>;
-      if (cmsType === 'link') return btn.url as string ?? null;
+      if (cmsType === 'link') return toLinkValueJson(value, airtableType);
       return btn.label as string ?? null;
     }
 
     default:
+      // singleLineText / formula mapped to a 'link' field need link-value JSON.
+      if (cmsType === 'link') return toLinkValueJson(value, airtableType);
       return typeof value === 'object' ? JSON.stringify(value) : String(value);
   }
+}
+
+/** Wrap a link-compatible Airtable value into a CollectionLinkValue JSON string */
+function toLinkValueJson(value: unknown, airtableType: AirtableFieldType): string | null {
+  let url: string | null = null;
+  if (airtableType === 'button') {
+    const btnUrl = typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>).url
+      : null;
+    url = typeof btnUrl === 'string' && btnUrl.trim() ? btnUrl.trim() : null;
+  } else if (typeof value !== 'object') {
+    url = String(value).trim() || null;
+  }
+  if (!url) return null;
+  const linkValue: CollectionLinkValue = { type: 'url', url };
+  return JSON.stringify(linkValue);
 }
 
 function extractAttachmentUrl(value: unknown): string | null {

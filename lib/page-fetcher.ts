@@ -2298,11 +2298,6 @@ export async function resolveCollectionLayers(
             offset = collectionVariable.offset;
           }
 
-          // When field-based sorting is active, fetch ALL items so we sort the
-          // full set before applying limit/offset. DB-level pagination uses
-          // manual_order which would give us the wrong subset.
-          const isFieldSort = sortBy && sortBy !== 'none' && sortBy !== 'manual' && sortBy !== 'random';
-
           // Determine allowed item IDs for reference/inverse-reference filtering
           let allowedItemIds: string[] | undefined;
           if (sourceFieldType === 'inverse_reference' && sourceFieldId && parentItemId) {
@@ -2370,10 +2365,38 @@ export async function resolveCollectionLayers(
             );
           }
 
+          // Sort the FULL filtered set BEFORE capping or paginating. The
+          // maxTotal cap and the page slice must operate on already-sorted
+          // data; otherwise (for field sorts) the cap is applied in cache
+          // order (manual_order/created_at) and can drop items that should
+          // appear first after sorting, producing a scattered/incomplete
+          // result that diverges from the canvas (which sorts at the DB level).
+          if (sortBy && sortBy !== 'none') {
+            if (sortBy === 'manual') {
+              filteredItems.sort((a, b) => a.manual_order - b.manual_order);
+            } else if (sortBy === 'random') {
+              filteredItems.sort(() => Math.random() - 0.5);
+            } else {
+              filteredItems.sort((a, b) => {
+                const aStr = String(a.values[sortBy] || '');
+                const bStr = String(b.values[sortBy] || '');
+                const aNum = aStr.trim() !== '' ? Number(aStr) : NaN;
+                const bNum = bStr.trim() !== '' ? Number(bStr) : NaN;
+
+                if (!isNaN(aNum) && !isNaN(bNum)) {
+                  return sortOrder === 'desc' ? bNum - aNum : aNum - bNum;
+                }
+
+                const comparison = aStr.localeCompare(bStr);
+                return sortOrder === 'desc' ? -comparison : comparison;
+              });
+            }
+          }
+
           // When pagination is enabled, `collectionVariable.limit` acts as a
           // hard cap on the total — both for the displayed count and for how
-          // far `load_more` can page. Without pagination, the legacy slice
-          // below applies it as a per-page limit instead.
+          // far `load_more` can page. Without pagination, the slice below
+          // applies it as a per-page limit instead.
           const maxTotal = isPaginated && typeof collectionVariable.limit === 'number' && collectionVariable.limit > 0
             ? collectionVariable.limit
             : undefined;
@@ -2391,44 +2414,11 @@ export async function resolveCollectionLayers(
 
           const totalItems = filteredItems.length;
 
-          // For non-field-sort, apply limit/offset in-memory (mirrors DB pagination)
-          let items: CollectionItemWithValues[];
-          if (!isFieldSort && (limit || offset)) {
+          // Apply limit/offset to the sorted, capped set (mirrors DB pagination).
+          let sortedItems = filteredItems;
+          if (limit || offset) {
             const start = offset || 0;
-            items = filteredItems.slice(start, limit ? start + limit : undefined);
-          } else {
-            items = filteredItems;
-          }
-
-          // Apply sorting if specified (since API doesn't handle sortBy yet)
-          let sortedItems = items;
-          if (sortBy && sortBy !== 'none') {
-            if (sortBy === 'manual') {
-              sortedItems = items.sort((a, b) => a.manual_order - b.manual_order);
-            } else if (sortBy === 'random') {
-              sortedItems = items.sort(() => Math.random() - 0.5);
-            } else {
-              sortedItems = items.sort((a, b) => {
-                const aValue = a.values[sortBy] || '';
-                const bValue = b.values[sortBy] || '';
-                const aStr = String(aValue);
-                const bStr = String(bValue);
-                const aNum = aStr.trim() !== '' ? Number(aStr) : NaN;
-                const bNum = bStr.trim() !== '' ? Number(bStr) : NaN;
-
-                if (!isNaN(aNum) && !isNaN(bNum)) {
-                  return sortOrder === 'desc' ? bNum - aNum : aNum - bNum;
-                }
-
-                const comparison = aStr.localeCompare(bStr);
-                return sortOrder === 'desc' ? -comparison : comparison;
-              });
-
-              if (limit || offset) {
-                const start = offset || 0;
-                sortedItems = sortedItems.slice(start, limit ? start + limit : undefined);
-              }
-            }
+            sortedItems = filteredItems.slice(start, limit ? start + limit : undefined);
           }
 
           // Find slug field for building collection item URLs

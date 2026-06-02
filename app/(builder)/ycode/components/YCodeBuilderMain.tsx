@@ -57,7 +57,6 @@ import { useLiveLayerUpdates } from '@/hooks/use-live-layer-updates';
 import { useLivePageUpdates } from '@/hooks/use-live-page-updates';
 import { useLiveComponentUpdates } from '@/hooks/use-live-component-updates';
 import { useLiveLayerStyleUpdates } from '@/hooks/use-live-layer-style-updates';
-import { useFigmaPaste } from '@/hooks/use-figma-paste';
 
 // 4. Stores
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -197,9 +196,6 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   const previousIsEditingRef = useRef<boolean | undefined>(undefined);
 
   // Collaboration hooks - enable realtime sync for layers and pages
-  // Intercept Webflow (and, in future, Figma) clipboard pastes for import.
-  useImportPaste();
-
   const liveLayerUpdates = useLiveLayerUpdates(currentPageId);
   // useLivePageUpdates initializes page sync subscriptions by being called
   const _livePageUpdates = useLivePageUpdates();
@@ -270,11 +266,11 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     }
   }, [editingComponentId, editingComponentVariantId, currentPageId, setDraftLayers]);
 
-  // Figma paste: detect Figma plugin clipboard data and convert to layers.
+  // Import paste: insert layers produced by an import (Webflow / Figma).
   // Placement mirrors Ycode's own copy/paste: insert inside the selected layer
   // when it can hold children, otherwise drop in as a sibling next to it; with
   // nothing suitable selected, fall back to the page root (body).
-  const insertFigmaLayers = useCallback((layers: Layer[]) => {
+  const insertImportedLayers = useCallback((layers: Layer[]) => {
     if (layers.length === 0 || !canEditStructure) return;
 
     const selectedId = selectedLayerIdRef.current;
@@ -391,9 +387,9 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     }
   }, [canEditStructure, clipboardLayer, editingComponentId, components, getCurrentLayers, updateCurrentLayers, currentPageId, pasteInside, pasteAfter]);
 
-  useFigmaPaste({
+  useImportPaste({
     enabled: !!(currentPageId || editingComponentId),
-    insertFigmaLayers,
+    insertLayers: insertImportedLayers,
     onNormalPaste: handleNormalPaste,
   });
 
@@ -1714,9 +1710,9 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
         }
 
         // Paste: Cmd/Ctrl + V
-        // Don't preventDefault here — let the browser fire the paste event
-        // so the paste handler (use-figma-paste) can read clipboardData for
-        // Figma payloads. Both Figma and normal paste are handled there.
+        // Don't preventDefault here — let the browser fire the paste event so
+        // the paste handler (use-import-paste) can read clipboardData. Webflow,
+        // Figma and normal internal paste are all handled there.
 
         // Duplicate: Cmd/Ctrl + D (supports multi-select)
         if ((e.metaKey || e.ctrlKey) && e.key === 'd' && !isContentOnlyRole) {

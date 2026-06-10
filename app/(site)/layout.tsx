@@ -49,8 +49,11 @@ export default async function SiteLayout({
     }
   }
 
+  // Published sites render text with the browser-default (`auto`) font
+  // smoothing — matching legacy output. Forcing `antialiased` here would render
+  // glyphs thinner/lighter than the original site.
   return (
-    <RootLayoutShell headElements={headElements}>
+    <RootLayoutShell headElements={headElements} bodyClassName="font-sans">
       {children}
     </RootLayoutShell>
   );

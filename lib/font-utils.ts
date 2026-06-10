@@ -134,13 +134,11 @@ export function buildGoogleFontUrl(font: Font): string {
 
   const sortedWeights = [...new Set(weights)].sort();
 
-  // Heuristic: contiguous weight range likely means variable font without axes data
-  const weightRange = getContiguousWeightRange(sortedWeights);
-  if (weightRange) {
-    return buildVariableFontUrl(family, weightRange, hasItalic, font.axes);
-  }
-
-  // Static font: list individual weights
+  // No variable `axes` data → treat as static and list discrete weights.
+  // Discrete `wght@` syntax works for both static and variable families, while
+  // the range syntax (`wght@200..800`) is rejected by Google Fonts for static
+  // families (e.g. Spectral) — the stylesheet then fails and text silently
+  // falls back to a system serif (Times).
   if (hasItalic) {
     const tuples: string[] = [];
     for (const w of sortedWeights) tuples.push(`0,${w}`);
@@ -205,34 +203,6 @@ function extractWeightsFromVariants(variants: string[]): string[] {
     }
   }
   return Array.from(weights);
-}
-
-/**
- * Check if sorted weights form a contiguous range in steps of 100
- * (e.g. 100,200,...,900). Returns the range bounds or null for non-contiguous sets.
- * Variable fonts on Google Fonts expose a full contiguous range, while static
- * fonts typically list only a few discrete weights.
- */
-function getContiguousWeightRange(
-  sortedWeights: string[]
-): { min: number; max: number } | null {
-  const nums = sortedWeights
-    .map(Number)
-    .filter(n => !isNaN(n) && n >= 100 && n <= 900);
-
-  if (nums.length < 3) return null;
-
-  const min = nums[0];
-  const max = nums[nums.length - 1];
-  const expectedCount = (max - min) / 100 + 1;
-
-  if (nums.length !== expectedCount) return null;
-
-  for (let i = 1; i < nums.length; i++) {
-    if (nums[i] - nums[i - 1] !== 100) return null;
-  }
-
-  return { min, max };
 }
 
 /**

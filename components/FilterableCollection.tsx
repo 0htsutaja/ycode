@@ -3,6 +3,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { LOAD_MORE_APPENDED_ATTR } from '@/components/LoadMoreCollection';
+import { hasDynamicDateRule } from '@/lib/collection-field-utils';
 import type { ConditionalVisibility, Layer } from '@/types';
 
 interface FilterableCollectionProps {
@@ -81,7 +82,13 @@ export default function FilterableCollection({
   const hasInputLinkedFilters = filters.groups.some(g =>
     g.conditions.some(c => c.inputLayerId || c.inputLayerId2)
   );
-  const pendingFirstEvalRef = useRef(hasInputLinkedFilters);
+  // Relative date presets (e.g. `$today`) are resolved at render time and baked
+  // into the indefinitely-cached SSR HTML, so they go stale as the calendar
+  // advances. Treat their presence like a runtime control: reconcile against the
+  // live server on mount so the list always reflects the real "today" (and stays
+  // consistent with the server-side search/filter, which re-resolves it fresh).
+  const hasDynamicDateFilter = hasDynamicDateRule(filters);
+  const pendingFirstEvalRef = useRef(hasInputLinkedFilters || hasDynamicDateFilter);
 
   const [filteredPage, setFilteredPage] = useState(1);
   const [filteredTotalPages, setFilteredTotalPages] = useState(1);
@@ -708,7 +715,7 @@ export default function FilterableCollection({
         return false;
       })
     );
-    const hasRuntimeControls = hasActiveInputValues || hasRuntimeSortOverride;
+    const hasRuntimeControls = hasActiveInputValues || hasRuntimeSortOverride || hasDynamicDateFilter;
     const filterKey = JSON.stringify({
       filterGroups,
       sortBy: effectiveSortBy,
@@ -797,7 +804,7 @@ export default function FilterableCollection({
 
     const startOffset = (startPage - 1) * (limit || 10);
     fetchFiltered(filterGroups, startOffset, false);
-  }, [filterValues, buildApiFilters, fetchFiltered, paginationMode, attachPaginationIntercept, detachPaginationIntercept, restoreSsrPagination, getSsrPaginationWrapper, updateEmptyStateElements, fpKey, pKey, limit, hasRuntimeSortOverride, effectiveSortBy, effectiveSortOrder, showSSR, clearFilteredDOM]);
+  }, [filterValues, buildApiFilters, fetchFiltered, paginationMode, attachPaginationIntercept, detachPaginationIntercept, restoreSsrPagination, getSsrPaginationWrapper, updateEmptyStateElements, fpKey, pKey, limit, hasRuntimeSortOverride, hasDynamicDateFilter, effectiveSortBy, effectiveSortOrder, showSSR, clearFilteredDOM]);
 
   useEffect(() => {
     if (!hasActiveFilters || paginationMode !== 'pages') return;

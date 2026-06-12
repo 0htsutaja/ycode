@@ -11,6 +11,7 @@ import { getKnexClient, closeKnexClient, testKnexConnection } from '../knex-clie
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { STORAGE_BUCKET, STORAGE_FOLDERS } from '@/lib/asset-constants';
 import { migrations } from '../migrations-loader';
+import { guardKnexForMigrationReplay } from '@/lib/migration-replay-guard';
 
 /**
  * Tables in FK-safe order (parents before children).
@@ -655,10 +656,12 @@ export async function importProject(
       await restoreAssetFiles(files, knex);
     }
 
+    // Destructive DDL is blocked: these up()s replay against live data.
+    const guardedKnex = guardKnexForMigrationReplay(knex);
     const pending = getPendingMigrations(manifest.lastMigration);
     for (const migration of pending) {
       try {
-        await migration.up(knex);
+        await migration.up(guardedKnex);
       } catch (error) {
         console.warn(
           `[importProject] Migration ${migration.name} failed (may be expected for schema-only):`,

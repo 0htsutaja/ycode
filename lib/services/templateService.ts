@@ -2,6 +2,7 @@ import { getKnexClient, closeKnexClient, testKnexConnection } from '../knex-clie
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { STORAGE_BUCKET, STORAGE_FOLDERS } from '@/lib/asset-constants';
 import { migrations } from '../migrations-loader';
+import { guardKnexForMigrationReplay } from '@/lib/migration-replay-guard';
 import { YCODE_EXTERNAL_API_URL } from '@/lib/config';
 
 /**
@@ -298,70 +299,6 @@ function getPendingMigrationsForTemplate(
   return migrations.slice(templateIndex + 1);
 }
 
-/** SQL verbs that destroy data and must never run during template replay. */
-const DESTRUCTIVE_REPLAY_SQL = /\b(drop\s+table|truncate)\b/i;
-
-type KnexClient = Awaited<ReturnType<typeof getKnexClient>>;
-type AnyFn = (...args: unknown[]) => unknown;
-
-/**
- * Wrap a knex client so destructive operations fail during template-replay
- * migrations. Replayed up()s run OUTSIDE knex's applied-migrations tracking,
- * against the live production schema — a migration that drops or truncates an
- * existing table (e.g. a "drop and recreate" development convenience) would
- * destroy real user data, not template data. This happened in production:
- * re-running the app_settings create migration wiped every integration
- * config. The thrown error is caught per-migration by the replay loop, so a
- * blocked migration is skipped while the rest still run.
- */
-function guardKnexForTemplateReplay(knex: KnexClient): KnexClient {
-  const blocked = (what: string): never => {
-    throw new Error(
-      `[templateReplay] Blocked destructive operation during template migration replay: ${what}. ` +
-        'Replayed migrations run against live data; make the migration idempotent instead of dropping tables.'
-    );
-  };
-
-  const guardSql = (sql: unknown, context: string): void => {
-    if (typeof sql === 'string' && DESTRUCTIVE_REPLAY_SQL.test(sql)) {
-      blocked(`${context} "${sql.trim().slice(0, 120)}"`);
-    }
-  };
-
-  const knexProps = knex as unknown as Record<PropertyKey, unknown>;
-
-  return new Proxy(knex as object, {
-    get(_target, prop) {
-      if (prop === 'schema') {
-        const schema = knex.schema as unknown as Record<PropertyKey, unknown>;
-        return new Proxy(schema, {
-          get(_schemaTarget, schemaProp) {
-            if (schemaProp === 'dropTable' || schemaProp === 'dropTableIfExists') {
-              return (tableName: unknown) => blocked(`schema.${String(schemaProp)}('${String(tableName)}')`);
-            }
-            const value = schema[schemaProp];
-            if (schemaProp === 'raw' && typeof value === 'function') {
-              return (...args: unknown[]) => {
-                guardSql(args[0], 'schema.raw');
-                return (value as AnyFn).apply(schema, args);
-              };
-            }
-            return typeof value === 'function' ? (value as AnyFn).bind(schema) : value;
-          },
-        });
-      }
-      const value = knexProps[prop];
-      if (prop === 'raw' && typeof value === 'function') {
-        return (...args: unknown[]) => {
-          guardSql(args[0], 'raw');
-          return (value as AnyFn).apply(knex, args);
-        };
-      }
-      return typeof value === 'function' ? (value as AnyFn).bind(knex) : value;
-    },
-  }) as KnexClient;
-}
-
 /**
  * Run pending migrations for a template.
  * This ensures template data is transformed to match the current schema.
@@ -380,7 +317,7 @@ async function runPendingMigrationsForTemplate(
   }
 
   // Destructive DDL is blocked: these up()s replay against live data.
-  const guardedKnex = guardKnexForTemplateReplay(knex);
+  const guardedKnex = guardKnexForMigrationReplay(knex);
 
   for (const migration of pendingMigrations) {
     try {

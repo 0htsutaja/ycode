@@ -61,23 +61,10 @@ export default async function DynamicSlugPage({ params, searchParams }: DynamicS
     fetchGlobalPageSettings(),
   ]);
 
+  // Page not found: hand off to the 404 boundary for a real HTTP 404 status
+  // (the custom 404 page is rendered there). Rendering content here would emit
+  // a 200 "soft 404", which search engines penalize.
   if (!data) {
-    const errorPageData = await fetchErrorPage(404, true);
-    if (errorPageData) {
-      const { page, pageLayers, components } = errorPageData;
-
-      return (
-        <PageRenderer
-          page={page}
-          layers={pageLayers.layers || []}
-          components={components}
-          generatedCss={globalSettings.publishedCss || undefined}
-          colorVariablesCss={globalSettings.colorVariablesCss || undefined}
-          ycodeBadge={globalSettings.ycodeBadge}
-        />
-      );
-    }
-
     notFound();
   }
 

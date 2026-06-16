@@ -290,28 +290,10 @@ export default async function Page({ params }: PageProps) {
     fetchCachedGlobalSettings(),
   ]);
 
-  // If page not found, try to show custom 404 error page
+  // Page not found: hand off to the 404 boundary so the response carries a real
+  // HTTP 404 status (the custom 404 page is rendered there). Returning content
+  // here would emit a 200 "soft 404", which search engines penalize.
   if (!data) {
-    const errorPageData = await fetchCachedErrorPage(404);
-
-    if (errorPageData) {
-      const { page: errorPage, pageLayers: errorPageLayers, components: errorComponents } = errorPageData;
-
-      return (
-        <PageRenderer
-          page={errorPage}
-          layers={errorPageLayers.layers || []}
-          components={errorComponents}
-          generatedCss={globalSettings.publishedCss || undefined}
-          colorVariablesCss={globalSettings.colorVariablesCss || undefined}
-          globalCustomCodeHead={globalSettings.globalCustomCodeHead}
-          globalCustomCodeBody={globalSettings.globalCustomCodeBody}
-          ycodeBadge={globalSettings.ycodeBadge}
-        />
-      );
-    }
-
-    // No custom 404 page, use default Next.js 404
     notFound();
   }
 
@@ -415,6 +397,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!data) {
     return {
       title: 'Page Not Found',
+      robots: { index: false, follow: false },
     };
   }
 

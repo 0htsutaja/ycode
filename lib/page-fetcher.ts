@@ -353,15 +353,17 @@ async function getCollectionItemBySlug(
             // Extract item ID from translation key
             const itemId = translation.source_id;
 
-            // Verify this item belongs to the correct collection
-            const { data: item, error: itemError } = await supabase
+            // Verify this item belongs to the correct collection. On the public
+            // path also require is_publishable so unpublished items can't resolve.
+            let itemQuery = supabase
               .from('collection_items')
               .select('*')
               .eq('id', itemId)
               .eq('collection_id', collectionId)
               .eq('is_published', isPublished)
-              .is('deleted_at', null)
-              .single();
+              .is('deleted_at', null);
+            if (isPublished) itemQuery = itemQuery.eq('is_publishable', true);
+            const { data: item, error: itemError } = await itemQuery.single();
 
             if (!itemError && item) {
               // Found the item via translation - return it with all values
@@ -387,15 +389,17 @@ async function getCollectionItemBySlug(
       return null;
     }
 
-    // Verify the item belongs to the correct collection
-    const { data: item, error: itemError } = await supabase
+    // Verify the item belongs to the correct collection. On the public path
+    // also require is_publishable so unpublished items can't resolve.
+    let itemQuery = supabase
       .from('collection_items')
       .select('*')
       .eq('id', valueData.item_id)
       .eq('collection_id', collectionId)
       .eq('is_published', isPublished)
-      .is('deleted_at', null)
-      .single();
+      .is('deleted_at', null);
+    if (isPublished) itemQuery = itemQuery.eq('is_publishable', true);
+    const { data: item, error: itemError } = await itemQuery.single();
 
     if (itemError || !item) {
       return null;

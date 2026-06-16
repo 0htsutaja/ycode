@@ -289,7 +289,9 @@ async function resolveDynamicPageRoutes(
           currentFolderId = folder.page_folder_id;
         }
         slugParts.push(...folderSegments);
-        slugParts.push(itemSlug);
+        // Use the item's translated slug for this locale (the actual localized
+        // URL); fall back to the default slug when no translation exists.
+        slugParts.push(lt[`cms:${sv.item_id}:field:key:slug`] || itemSlug);
 
         const localePath = slugParts.map(normalizeSlugSegment).filter(Boolean).join('/');
         if (localePath) routes.push(localePath);
@@ -321,13 +323,53 @@ export async function getRoutePathsForDeletedCollectionItems(
     { data: dynamicPages },
     { data: folders },
     { data: locales },
+    { data: translations },
   ] = await Promise.all([
     client.from('pages').select('*').eq('is_published', true).eq('is_dynamic', true).is('deleted_at', null),
     client.from('page_folders').select('*').eq('is_published', true).is('deleted_at', null),
     client.from('locales').select('*').is('deleted_at', null),
+    client.from('translations')
+      .select('locale_id, source_type, source_id, content_key, content_value')
+      .eq('is_published', true).is('deleted_at', null)
+      .in('content_key', ['slug', 'field:key:slug']),
   ]);
 
   if (!dynamicPages || !folders) return [];
+
+  // Build translations lookup: locale_id → "type:source:key" → value
+  const translationsMap: Record<string, Record<string, string>> = {};
+  for (const t of translations || []) {
+    if (!translationsMap[t.locale_id]) translationsMap[t.locale_id] = {};
+    translationsMap[t.locale_id][`${t.source_type}:${t.source_id}:${t.content_key}`] = t.content_value;
+  }
+
+  // Translated slugs are keyed by item id, but callers only pass default slug
+  // values. Map each old slug back to its item id (draft rows survive unpublish,
+  // so they still resolve) to look up per-locale translated slugs.
+  const slugToItemIdByCollection = new Map<string, Map<string, string>>();
+  for (const [collectionId, slugs] of deletedSlugs) {
+    if (!slugs || slugs.length === 0) continue;
+    const { data: slugField } = await client
+      .from('collection_fields')
+      .select('id')
+      .eq('collection_id', collectionId)
+      .eq('key', 'slug')
+      .is('deleted_at', null)
+      .limit(1)
+      .single();
+    if (!slugField) continue;
+    const { data: values } = await client
+      .from('collection_item_values')
+      .select('item_id, value')
+      .eq('field_id', slugField.id)
+      .is('deleted_at', null)
+      .in('value', slugs);
+    const map = new Map<string, string>();
+    for (const v of values || []) {
+      if (typeof v.value === 'string') map.set(v.value, v.item_id);
+    }
+    slugToItemIdByCollection.set(collectionId, map);
+  }
 
   for (const page of dynamicPages as Page[]) {
     const collectionId = (page.settings as any)?.cms?.collection_id;
@@ -336,27 +378,32 @@ export async function getRoutePathsForDeletedCollectionItems(
     const slugs = deletedSlugs.get(collectionId);
     if (!slugs || slugs.length === 0) continue;
 
+    const slugToItemId = slugToItemIdByCollection.get(collectionId) || new Map<string, string>();
     const basePath = buildSlugPath(page, folders as PageFolder[], 'page', '').slice(1).replace(/\/$/, '');
 
     for (const itemSlug of slugs) {
       const fullPath = basePath ? `${basePath}/${itemSlug}` : itemSlug;
       routes.push(fullPath);
 
-      // Locale-prefixed paths
+      const itemId = slugToItemId.get(itemSlug);
+
+      // Locale-prefixed paths with translated folder + item slugs
       if (locales) {
         for (const locale of locales) {
           if (locale.is_default) continue;
+          const lt = translationsMap[locale.id] || {};
           const slugParts: string[] = [locale.code];
           let currentFolderId = page.page_folder_id;
           const folderSegments: string[] = [];
           while (currentFolderId) {
             const folder = (folders as PageFolder[]).find(f => f.id === currentFolderId);
             if (!folder) break;
-            folderSegments.unshift(folder.slug);
+            folderSegments.unshift(lt[`folder:${folder.id}:slug`] || folder.slug);
             currentFolderId = folder.page_folder_id;
           }
           slugParts.push(...folderSegments);
-          slugParts.push(itemSlug);
+          const translatedSlug = itemId ? lt[`cms:${itemId}:field:key:slug`] : undefined;
+          slugParts.push(translatedSlug || itemSlug);
           const localePath = slugParts.map(normalizeSlugSegment).filter(Boolean).join('/');
           if (localePath) routes.push(localePath);
         }

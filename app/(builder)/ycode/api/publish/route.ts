@@ -288,6 +288,7 @@ export async function POST(request: NextRequest) {
             const staleSlugsCombined = [
               ...(p?.deletedItemSlugs || []),
               ...(p?.renamedItemOldSlugs || []),
+              ...(p?.unpublishedItemSlugs || []),
             ];
             if (staleSlugsCombined.length > 0) {
               const existing = deletedCollectionItemSlugs.get(collectionPublish.collectionId) || [];
@@ -356,6 +357,7 @@ export async function POST(request: NextRequest) {
           const staleSlugsCombined = [
             ...(p?.deletedItemSlugs || []),
             ...(p?.renamedItemOldSlugs || []),
+            ...(p?.unpublishedItemSlugs || []),
           ];
           if (staleSlugsCombined.length > 0) {
             const existing = deletedCollectionItemSlugs.get(collection.id) || [];

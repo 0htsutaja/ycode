@@ -38,11 +38,13 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useGlobalsStore } from '@/stores/useGlobalsStore';
 import { useAssetsStore } from '@/stores/useAssetsStore';
 import { useEditorStore } from '@/stores/useEditorStore';
+import { ASSET_CATEGORIES, getOptimizedImageUrl, isAssetOfType } from '@/lib/asset-utils';
 import { FIELD_TYPES } from '@/lib/collection-field-utils';
 import { getFileManagerCategory, isValidAssetForField } from '@/lib/collection-field-utils';
 import { extractPlainTextFromTiptap } from '@/lib/tiptap-utils';
@@ -93,6 +95,63 @@ function getValuePreview(global: GlobalVariable, timezone: string, assetName: (i
     default:
       return String(value);
   }
+}
+
+interface GlobalImagePreviewProps {
+  assetId: string;
+}
+
+/** Inline image thumbnail used in the value column for image-typed globals. */
+function GlobalImagePreview({ assetId }: GlobalImagePreviewProps) {
+  const getAsset = useAssetsStore((state) => state.getAsset);
+  const asset = getAsset(assetId);
+
+  if (!asset) {
+    return (
+      <div className="relative size-8 rounded-[6px] overflow-hidden bg-secondary/30 inline-block">
+        <div className="absolute inset-0 flex items-center justify-center z-10">
+          <Icon name="image" className="size-3.5 text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  const isSvgIcon = !!asset.content || (asset.mime_type && isAssetOfType(asset.mime_type, ASSET_CATEGORIES.ICONS));
+  const imageUrl = asset.public_url ?? null;
+  const showCheckerboard = isSvgIcon || !!imageUrl;
+
+  return (
+    <Tooltip disableHoverableContent>
+      <TooltipTrigger asChild>
+        <div className="relative size-8 rounded-[6px] overflow-hidden bg-secondary/30 inline-block">
+          {showCheckerboard && (
+            <div className="absolute inset-0 opacity-10 bg-checkerboard" />
+          )}
+          {isSvgIcon && asset.content ? (
+            <div
+              data-icon
+              className="relative w-full h-full flex items-center justify-center p-1 pointer-events-none text-foreground z-10"
+              dangerouslySetInnerHTML={{ __html: asset.content }}
+            />
+          ) : imageUrl ? (
+            <img
+              src={getOptimizedImageUrl(imageUrl)}
+              alt={asset.filename || 'Image'}
+              className="relative w-full h-full object-contain pointer-events-none z-10"
+              loading="lazy"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center z-10">
+              <Icon name="image" className="size-3.5 text-muted-foreground" />
+            </div>
+          )}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        <p>{asset.filename}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 interface GlobalValueInputProps {
@@ -357,7 +416,7 @@ export default function GlobalsManager({ canManageSchema = true, timezone }: Glo
                     <ContextMenuTrigger asChild>
                       <tr
                         className={cn(
-                          'group border-b hover:bg-secondary/50 transition-colors cursor-pointer',
+                          'group h-16 border-b hover:bg-secondary/50 transition-colors cursor-pointer',
                           !canManageSchema && 'cursor-default'
                         )}
                         onClick={() => canManageSchema && openEdit(global)}
@@ -369,8 +428,12 @@ export default function GlobalsManager({ canManageSchema = true, timezone }: Glo
                             {meta.label}
                           </span>
                         </td>
-                        <td className="px-4 py-5 text-muted-foreground">
-                          <span className="block truncate">{preview || '-'}</span>
+                        <td className="px-4 text-muted-foreground">
+                          {global.type === 'image' && global.value ? (
+                            <GlobalImagePreview assetId={global.value} />
+                          ) : (
+                            <span className="block truncate">{preview || '-'}</span>
+                          )}
                         </td>
                       </tr>
                     </ContextMenuTrigger>

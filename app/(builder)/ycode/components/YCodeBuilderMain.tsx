@@ -34,7 +34,7 @@ import MigrationChecker from '@/components/MigrationChecker';
 import BuilderLoading from '@/components/BuilderLoading';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { checkCircularReference } from '@/lib/component-utils';
+import { checkCircularReference, detachSpecificLayerFromComponent } from '@/lib/component-utils';
 
 // Right sidebar is always visible in editor mode - load eagerly to avoid delay
 import RightSidebar from '../components/RightSidebar';
@@ -2018,47 +2018,15 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
             if (layer?.componentId) {
               const { getComponentById } = useComponentsStore.getState();
               const component = getComponentById(layer.componentId);
-
-              if (!component || !component.layers || component.layers.length === 0) {
-                // If component not found or has no layers, just remove the componentId
-                updateLayer(currentPageId, selectedLayerId, {
-                  componentId: undefined,
-                  componentOverrides: undefined,
-                });
-              } else {
-                // Replace layer with component's layers (detach)
-                const detachDraft = usePagesStore.getState().draftsByPageId[currentPageId];
-                if (detachDraft) {
-                  const replaceLayerWithComponentLayers = (layers: Layer[]): Layer[] => {
-                    return layers.flatMap(currentLayer => {
-                      if (currentLayer.id === selectedLayerId) {
-                        // Deep clone and regenerate IDs
-                        const clonedLayers = JSON.parse(JSON.stringify(component.layers));
-                        return clonedLayers.map((l: Layer) => ({
-                          ...l,
-                          id: crypto.randomUUID(),
-                          children: l.children ? regenerateChildIds(l.children) : undefined,
-                        }));
-                      }
-                      if (currentLayer.children) {
-                        return { ...currentLayer, children: replaceLayerWithComponentLayers(currentLayer.children) };
-                      }
-                      return currentLayer;
-                    });
-                  };
-
-                  const regenerateChildIds = (children: Layer[]): Layer[] => {
-                    return children.map(child => ({
-                      ...child,
-                      id: crypto.randomUUID(),
-                      children: child.children ? regenerateChildIds(child.children) : undefined,
-                    }));
-                  };
-
-                  const newLayers = replaceLayerWithComponentLayers(detachDraft.layers);
-                  setDraftLayers(currentPageId, newLayers);
-                  setSelectedLayerId(null);
-                }
+              const detachDraft = usePagesStore.getState().draftsByPageId[currentPageId];
+              if (detachDraft) {
+                const newLayers = detachSpecificLayerFromComponent(
+                  detachDraft.layers,
+                  selectedLayerId,
+                  component || undefined
+                );
+                setDraftLayers(currentPageId, newLayers);
+                setSelectedLayerId(null);
               }
             }
           }

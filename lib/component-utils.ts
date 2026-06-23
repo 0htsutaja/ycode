@@ -5,6 +5,7 @@
  */
 
 import type { Layer, Component } from '@/types';
+import { getComponentVariantLayers } from './component-variant-utils';
 import { regenerateIdsWithInteractionRemapping } from './layer-utils';
 
 /**
@@ -379,14 +380,20 @@ export function detachSpecificLayerFromComponent(
  * @returns Array of layers (component children with new IDs, or stripped layer)
  */
 function replaceLayerWithComponentChildren(layer: Layer, component?: Component): Layer[] {
+  // Use the layers of the variant the instance is actually using, falling back
+  // to the primary variant (or legacy `component.layers`) when none is set.
+  const variantLayers = component
+    ? getComponentVariantLayers(component, layer.componentVariantId)
+    : [];
+
   // If we don't have the component data, just strip the componentId
-  if (!component || !component.layers || component.layers.length === 0) {
-    const { componentId: _, componentOverrides: __, ...rest } = layer;
+  if (!component || variantLayers.length === 0) {
+    const { componentId: _, componentVariantId: __, componentOverrides: ___, ...rest } = layer;
     return [rest as Layer];
   }
 
-  // Clone the component's layers with new IDs and return them
-  const cloned = JSON.parse(JSON.stringify(component.layers)) as Layer[];
+  // Clone the variant's layers with new IDs and return them
+  const cloned = JSON.parse(JSON.stringify(variantLayers)) as Layer[];
   return cloned.map(regenerateIdsWithInteractionRemapping);
 }
 

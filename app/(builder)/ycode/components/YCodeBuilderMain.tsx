@@ -64,6 +64,7 @@ import { useClipboardStore } from '@/stores/useClipboardStore';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { usePagesStore, consumePageMcpSync } from '@/stores/usePagesStore';
 import { useComponentsStore } from '@/stores/useComponentsStore';
+import { useCanvasTextEditorStore } from '@/stores/useCanvasTextEditorStore';
 import { useLayerStylesStore } from '@/stores/useLayerStylesStore';
 import { useCollaborationPresenceStore, getResourceLockKey, RESOURCE_TYPES } from '@/stores/useCollaborationPresenceStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
@@ -1329,7 +1330,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   // Exit component edit mode handler
   const handleExitComponentEditMode = useCallback(async () => {
     const { editingComponentId, returnToPageId, setEditingComponentId, returnToLayerId, getReturnDestination, setSelectedLayerId: setLayerIdFromStore } = useEditorStore.getState();
-    const { saveComponentDraft, clearComponentDraft, getComponentById, saveTimeouts, loadComponentDraft } = useComponentsStore.getState();
+    const { saveComponentDraft, clearComponentDraft, getComponentById, loadComponentDraft } = useComponentsStore.getState();
     const { updateComponentOnLayers } = usePagesStore.getState();
 
     if (!editingComponentId || isExitingComponentModeRef.current) return;
@@ -1338,9 +1339,23 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     isExitingComponentModeRef.current = true;
 
     try {
-      // Clear any pending auto-save timeout to avoid duplicate saves
-      if (saveTimeouts[editingComponentId]) {
-        clearTimeout(saveTimeouts[editingComponentId]);
+      // Inline text editing commits its content lazily (on blur/unmount), so a
+      // pending edit hasn't reached the component draft yet. Finish it now —
+      // while edit mode is still active — so the latest content is written into
+      // the draft (and marks it dirty) before we save below. Without this the
+      // first exit persists stale content and the edit only "sticks" on a
+      // subsequent attempt once the editor has already flushed.
+      const { isEditing, requestFinish } = useCanvasTextEditorStore.getState();
+      if (isEditing) {
+        requestFinish();
+      }
+
+      // Clear any pending auto-save timeout to avoid duplicate saves. Read it
+      // fresh because finishing inline editing above may have scheduled a new
+      // one via updateComponentDraft.
+      const pendingSaveTimeout = useComponentsStore.getState().saveTimeouts[editingComponentId];
+      if (pendingSaveTimeout) {
+        clearTimeout(pendingSaveTimeout);
       }
 
       // Capture whether this draft has any unpersisted edits before saving,

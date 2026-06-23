@@ -1484,7 +1484,11 @@ const CenterCanvas = React.memo(function CenterCanvas({
     // of mutating the layer tree.
     if (selectedLocale && !selectedLocale.is_default) return;
 
-    if (editingComponentId && activeComponentVariantId) {
+    if (editingComponentId) {
+      // While editing a component, never fall through to the page draft — doing
+      // so would write the component's inner-layer edit onto the page (or drop
+      // it). If the variant can't be resolved yet, skip rather than corrupt.
+      if (!activeComponentVariantId) return;
       const { componentDrafts, updateComponentDraft } = useComponentsStore.getState();
       const currentDraft = componentDrafts[editingComponentId]?.[activeComponentVariantId] || [];
       updateComponentDraft(editingComponentId, activeComponentVariantId, updateLayerProps(currentDraft, layerId, updates));
